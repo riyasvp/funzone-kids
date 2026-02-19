@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import GameLayout from '@/components/GameLayout';
 import WinScreen from '@/components/WinScreen';
@@ -20,7 +20,7 @@ export default function DotConnector() {
   const [horizontalLines, setHorizontalLines] = useState<Line[]>([]);
   const [verticalLines, setVerticalLines] = useState<Line[]>([]);
   const [boxes, setBoxes] = useState<{ owner: 'player' | 'ai' | null }[][]>(
-    Array(GRID_SIZE - 1).fill(null).map(() => Array(GRID_SIZE - 1).fill(null))
+    Array(GRID_SIZE - 1).fill(null).map(() => Array(GRID_SIZE - 1).fill({ owner: null }))
   );
   const [isPlayerTurn, setIsPlayerTurn] = useState(true);
   const [scores, setScores] = useState({ player: 0, ai: 0 });
