@@ -1,0 +1,227 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import GameLayout from '@/components/GameLayout';
+import WinScreen from '@/components/WinScreen';
+import { playSound, playWinFanfare } from '@/lib/sounds';
+import { getHighScore, setHighScore } from '@/lib/highscore';
+
+const EMOJIS = ['🎈', '🌟', '🌈', '🦋', '🌸', '🍎', '🎸', '🚀', '🎨', '🦁', '🐸', '🐨', '🦄', '🌙', '❤️', '🔥'];
+
+type Card = {
+  id: number;
+  emoji: string;
+  isFlipped: boolean;
+  isMatched: boolean;
+};
+
+const DIFFICULTIES = [
+  { name: 'Easy', cols: 4, rows: 4, pairs: 8 },
+  { name: 'Medium', cols: 6, rows: 4, pairs: 12 },
+  { name: 'Hard', cols: 6, rows: 6, pairs: 18 },
+];
+
+export default function MemoryMatch() {
+  const [difficulty, setDifficulty] = useState(0);
+  const [cards, setCards] = useState<Card[]>([]);
+  const [flippedCards, setFlippedCards] = useState<number[]>([]);
+  const [moves, setMoves] = useState(0);
+  const [timer, setTimer] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [gameWon, setGameWon] = useState(false);
+  const [bestMoves, setBestMoves] = useState<{ [key: number]: number }>({});
+
+  useEffect(() => {
+    const saved = localStorage.getItem('memory-match-best');
+    if (saved) setBestMoves(JSON.parse(saved));
+  }, []);
+
+  const initGame = (diffIndex: number) => {
+    const diff = DIFFICULTIES[diffIndex];
+    const selectedEmojis = EMOJIS.slice(0, diff.pairs);
+    const cardEmojis = [...selectedEmojis, ...selectedEmojis];
+
+    // Shuffle
+    for (let i = cardEmojis.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [cardEmojis[i], cardEmojis[j]] = [cardEmojis[j], cardEmojis[i]];
+    }
+
+    setCards(
+      cardEmojis.map((emoji, index) => ({
+        id: index,
+        emoji,
+        isFlipped: false,
+        isMatched: false,
+      }))
+    );
+    setFlippedCards([]);
+    setMoves(0);
+    setTimer(0);
+    setDifficulty(diffIndex);
+    setIsPlaying(true);
+    setGameWon(false);
+  };
+
+  // Timer
+  useEffect(() => {
+    if (!isPlaying || gameWon) return;
+    const interval = setInterval(() => setTimer(t => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [isPlaying, gameWon]);
+
+  const handleCardClick = (id: number) => {
+    if (!isPlaying || gameWon) return;
+    if (flippedCards.length === 2) return;
+
+    const card = cards.find(c => c.id === id);
+    if (!card || card.isFlipped || card.isMatched) return;
+
+    playSound('click');
+    const newCards = cards.map(c =>
+      c.id === id ? { ...c, isFlipped: true } : c
+    );
+    setCards(newCards);
+
+    const newFlipped = [...flippedCards, id];
+    setFlippedCards(newFlipped);
+
+    if (newFlipped.length === 2) {
+      setMoves(m => m + 1);
+      const [first, second] = newFlipped;
+      const firstCard = newCards.find(c => c.id === first)!;
+      const secondCard = newCards.find(c => c.id === second)!;
+
+      if (firstCard.emoji === secondCard.emoji) {
+        playSound('score');
+        setTimeout(() => {
+          setCards(prev =>
+            prev.map(c =>
+              c.id === first || c.id === second ? { ...c, isMatched: true } : c
+            )
+          );
+          setFlippedCards([]);
+        }, 300);
+      } else {
+        setTimeout(() => {
+          setCards(prev =>
+            prev.map(c =>
+              c.id === first || c.id === second ? { ...c, isFlipped: false } : c
+            )
+          );
+          setFlippedCards([]);
+        }, 800);
+      }
+    }
+  };
+
+  // Check win
+  useEffect(() => {
+    if (cards.length > 0 && cards.every(c => c.isMatched) && isPlaying) {
+      playWinFanfare();
+      setGameWon(true);
+      setIsPlaying(false);
+
+      const newBest = { ...bestMoves };
+      if (!newBest[difficulty] || moves < newBest[difficulty]) {
+        newBest[difficulty] = moves;
+        setBestMoves(newBest);
+        localStorage.setItem('memory-match-best', JSON.stringify(newBest));
+      }
+    }
+  }, [cards, isPlaying, moves, difficulty, bestMoves]);
+
+  const formatTime = (s: number) => {
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const diff = DIFFICULTIES[difficulty];
+
+  return (
+    <GameLayout title="Memory Match" emoji="🃏" score={moves} showScore={true}>
+      <div className="flex flex-col items-center">
+        {/* Difficulty Selection */}
+        {!isPlaying && !gameWon && (
+          <div className="text-center mb-6">
+            <h2 className="text-2xl font-bold text-white mb-4">Choose Difficulty</h2>
+            <div className="flex flex-wrap justify-center gap-3">
+              {DIFFICULTIES.map((d, i) => (
+                <motion.button
+                  key={d.name}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => initGame(i)}
+                  className={`px-6 py-3 rounded-xl font-bold text-white shadow-lg ${
+                    i === 0 ? 'bg-green-500 hover:bg-green-600' :
+                    i === 1 ? 'bg-yellow-500 hover:bg-yellow-600 text-purple-900' :
+                    'bg-red-500 hover:bg-red-600'
+                  }`}
+                >
+                  {d.name}
+                  <span className="block text-xs opacity-75">{d.cols}x{d.rows}</span>
+                </motion.button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Game Stats */}
+        {isPlaying && (
+          <div className="flex gap-4 mb-4 text-white">
+            <div className="bg-white/20 px-4 py-2 rounded-full">
+              Moves: {moves}
+            </div>
+            <div className="bg-white/20 px-4 py-2 rounded-full">
+              ⏱️ {formatTime(timer)}
+            </div>
+          </div>
+        )}
+
+        {/* Card Grid */}
+        {isPlaying && (
+          <div
+            className="grid gap-2 sm:gap-3"
+            style={{
+              gridTemplateColumns: `repeat(${diff.cols}, minmax(0, 1fr))`,
+              maxWidth: `${diff.cols * 70}px`,
+            }}
+          >
+            <AnimatePresence>
+              {cards.map(card => (
+                <motion.button
+                  key={card.id}
+                  initial={{ scale: 0, rotateY: 180 }}
+                  animate={{ scale: 1, rotateY: card.isFlipped || card.isMatched ? 0 : 180 }}
+                  whileHover={{ scale: card.isMatched ? 1 : 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => handleCardClick(card.id)}
+                  className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl text-2xl sm:text-3xl flex items-center justify-center shadow-lg transition-all ${
+                    card.isMatched
+                      ? 'bg-green-400 border-2 border-green-300'
+                      : card.isFlipped
+                      ? 'bg-white'
+                      : 'bg-gradient-to-br from-purple-500 to-pink-500'
+                  }`}
+                >
+                  {(card.isFlipped || card.isMatched) ? card.emoji : '❓'}
+                </motion.button>
+              ))}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {/* Win Screen */}
+        <WinScreen
+          show={gameWon}
+          score={moves}
+          message={`Matched in ${moves} moves!`}
+          isNewHighScore={bestMoves[difficulty] === moves}
+          onPlayAgain={() => initGame(difficulty)}
+        />
+      </div>
+    </GameLayout>
+  );
+}
