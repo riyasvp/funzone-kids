@@ -1,186 +1,209 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import GameLayout from '@/components/GameLayout';
 import WinScreen from '@/components/WinScreen';
 import { playSound } from '@/lib/sounds';
 
-const GRID_SIZE = 5; // 5x5 dots = 4x4 boxes
+const GRID_SIZE = 4; // 4x4 = 16 dots, 9 boxes
 const BOX_SIZE = 60;
 
-type Line = {
-  row: number;
-  col: number;
-  horizontal: boolean;
+type Box = {
   owner: 'player' | 'ai' | null;
 };
 
-export default function DotConnector() {
-  const [horizontalLines, setHorizontalLines] = useState<Line[]>([]);
-  const [verticalLines, setVerticalLines] = useState<Line[]>([]);
-  const [boxes, setBoxes] = useState<{ owner: 'player' | 'ai' | null }[][]>(
-    Array(GRID_SIZE - 1).fill(null).map(() => Array(GRID_SIZE - 1).fill({ owner: null }))
+function createInitialBoxes(): Box[][] {
+  return Array(GRID_SIZE - 1).fill(null).map(() =>
+    Array(GRID_SIZE - 1).fill(null).map(() => ({ owner: null }))
   );
+}
+
+function createInitialLines(): { h: boolean[][]; v: boolean[][] } {
+  const h: boolean[][] = [];
+  const v: boolean[][] = [];
+
+  // Horizontal lines: GRID_SIZE rows, GRID_SIZE-1 columns
+  for (let r = 0; r < GRID_SIZE; r++) {
+    h.push(Array(GRID_SIZE - 1).fill(false));
+  }
+
+  // Vertical lines: GRID_SIZE-1 rows, GRID_SIZE columns
+  for (let r = 0; r < GRID_SIZE - 1; r++) {
+    v.push(Array(GRID_SIZE).fill(false));
+  }
+
+  return { h, v };
+}
+
+export default function DotConnector() {
+  const [hLines, setHLines] = useState<boolean[][]>([]);
+  const [vLines, setVLines] = useState<boolean[][]>([]);
+  const [hOwners, setHOwners] = useState<('player' | 'ai')[][]>([]);
+  const [vOwners, setVOwners] = useState<('player' | 'ai')[][]>([]);
+  const [boxes, setBoxes] = useState<Box[][]>([]);
   const [isPlayerTurn, setIsPlayerTurn] = useState(true);
   const [scores, setScores] = useState({ player: 0, ai: 0 });
   const [gameOver, setGameOver] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  const initGame = () => {
-    // Initialize lines
-    const hLines: Line[] = [];
-    const vLines: Line[] = [];
-
-    for (let r = 0; r < GRID_SIZE; r++) {
-      for (let c = 0; c < GRID_SIZE - 1; c++) {
-        hLines.push({ row: r, col: c, horizontal: true, owner: null });
-      }
-    }
-
-    for (let r = 0; r < GRID_SIZE - 1; r++) {
-      for (let c = 0; c < GRID_SIZE; c++) {
-        vLines.push({ row: r, col: c, horizontal: false, owner: null });
-      }
-    }
-
-    setHorizontalLines(hLines);
-    setVerticalLines(vLines);
-    setBoxes(Array(GRID_SIZE - 1).fill(null).map(() => Array(GRID_SIZE - 1).fill(null)));
+  const initGame = useCallback(() => {
+    const { h, v } = createInitialLines();
+    setHLines(h);
+    setVLines(v);
+    setHOwners(Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE - 1).fill(null)));
+    setVOwners(Array(GRID_SIZE - 1).fill(null).map(() => Array(GRID_SIZE).fill(null)));
+    setBoxes(createInitialBoxes());
     setIsPlayerTurn(true);
     setScores({ player: 0, ai: 0 });
     setGameOver(false);
     setIsPlaying(true);
-  };
+  }, []);
 
-  const checkForBox = useCallback((
-    hLines: Line[],
-    vLines: Line[],
+  const checkBoxes = useCallback((
+    newH: boolean[][],
+    newV: boolean[][],
+    newBoxes: Box[][],
     player: 'player' | 'ai'
-  ): { newBoxes: { owner: 'player' | 'ai' | null }[][]; scored: boolean } => {
-    const newBoxes: { owner: 'player' | 'ai' | null }[][] = Array(GRID_SIZE - 1)
-      .fill(null)
-      .map(() => Array(GRID_SIZE - 1).fill(null));
-
-    let scored = false;
+  ): { boxes: Box[][]; completed: number } => {
+    let completed = 0;
+    const updatedBoxes = newBoxes.map(row => row.map(box => ({ ...box })));
 
     for (let r = 0; r < GRID_SIZE - 1; r++) {
       for (let c = 0; c < GRID_SIZE - 1; c++) {
-        const top = hLines.find(l => l.row === r && l.col === c && l.horizontal);
-        const bottom = hLines.find(l => l.row === r + 1 && l.col === c && l.horizontal);
-        const left = vLines.find(l => l.row === r && l.col === c && !l.horizontal);
-        const right = vLines.find(l => l.row === r && l.col === c + 1 && !l.horizontal);
+        if (updatedBoxes[r][c].owner !== null) continue;
 
-        if (top?.owner && bottom?.owner && left?.owner && right?.owner) {
-          newBoxes[r][c] = { owner: player };
-          scored = true;
+        const top = newH[r][c];
+        const bottom = newH[r + 1][c];
+        const left = newV[r][c];
+        const right = newV[r][c + 1];
+
+        if (top && bottom && left && right) {
+          updatedBoxes[r][c] = { owner: player };
+          completed++;
         }
       }
     }
 
-    return { newBoxes, scored };
+    return { boxes: updatedBoxes, completed };
   }, []);
 
-  const makeMove = useCallback((line: Line, player: 'player' | 'ai') => {
-    if (line.owner) return false;
+  const makeMove = useCallback((
+    type: 'h' | 'v',
+    row: number,
+    col: number,
+    player: 'player' | 'ai'
+  ) => {
+    if (!isPlaying || gameOver) return;
+    if (player === 'ai' ? isPlayerTurn : !isPlayerTurn) return;
 
-    if (line.horizontal) {
-      setHorizontalLines(prev => {
-        const updated = prev.map(l =>
-          l.row === line.row && l.col === line.col ? { ...l, owner: player } : l
-        );
-        setVerticalLines(vLines => {
-          const { newBoxes, scored } = checkForBox(updated, vLines, player);
-          setBoxes(newBoxes);
+    // Check if already taken
+    if (type === 'h' && hLines[row]?.[col]) return;
+    if (type === 'v' && vLines[row]?.[col]) return;
 
-          if (scored) {
-            playSound('score');
-            setScores(prev => ({
-              ...prev,
-              [player]: prev[player] + 1,
-            }));
-          } else {
-            setIsPlayerTurn(player === 'ai');
-          }
+    const newH = hLines.map(r => [...r]);
+    const newV = vLines.map(r => [...r]);
+    const newHO = hOwners.map(r => [...r]);
+    const newVO = vOwners.map(r => [...r]);
 
-          // Check game over
-          const allTaken = updated.every(l => l.owner) && vLines.every(l => l.owner);
-          if (allTaken) {
-            setGameOver(true);
-            setIsPlaying(false);
-          }
-
-          return vLines;
-        });
-        return updated;
-      });
+    if (type === 'h') {
+      newH[row][col] = true;
+      newHO[row][col] = player;
     } else {
-      setVerticalLines(prev => {
-        const updated = prev.map(l =>
-          l.row === line.row && l.col === line.col ? { ...l, owner: player } : l
-        );
-        setHorizontalLines(hLines => {
-          const { newBoxes, scored } = checkForBox(hLines, updated, player);
-          setBoxes(newBoxes);
-
-          if (scored) {
-            playSound('score');
-            setScores(prev => ({
-              ...prev,
-              [player]: prev[player] + 1,
-            }));
-          } else {
-            setIsPlayerTurn(player === 'ai');
-          }
-
-          const allTaken = hLines.every(l => l.owner) && updated.every(l => l.owner);
-          if (allTaken) {
-            setGameOver(true);
-            setIsPlaying(false);
-          }
-
-          return hLines;
-        });
-        return updated;
-      });
+      newV[row][col] = true;
+      newVO[row][col] = player;
     }
 
-    return true;
-  }, [checkForBox]);
+    const { boxes: updatedBoxes, completed } = checkBoxes(newH, newV, boxes, player);
+
+    setHLines(newH);
+    setVLines(newV);
+    setHOwners(newHO);
+    setVOwners(newVO);
+    setBoxes(updatedBoxes);
+
+    if (completed > 0) {
+      playSound('score');
+      setScores(prev => ({
+        ...prev,
+        [player]: prev[player] + completed
+      }));
+    } else {
+      playSound('click');
+    }
+
+    // Check game over
+    const totalLines = (GRID_SIZE * (GRID_SIZE - 1)) * 2;
+    const takenLines = newH.flat().filter(Boolean).length + newV.flat().filter(Boolean).length;
+
+    if (takenLines === totalLines) {
+      setGameOver(true);
+      setIsPlaying(false);
+    } else if (completed === 0) {
+      setIsPlayerTurn(player === 'ai');
+    }
+  }, [isPlaying, gameOver, isPlayerTurn, hLines, vLines, hOwners, vOwners, boxes, checkBoxes]);
 
   // AI Move
   const makeAIMove = useCallback(() => {
-    // Simple AI: pick random available line
-    const availableH = horizontalLines.filter(l => !l.owner);
-    const availableV = verticalLines.filter(l => !l.owner);
-    const allAvailable = [...availableH, ...availableV];
+    if (isPlayerTurn || !isPlaying || gameOver) return;
 
-    if (allAvailable.length === 0) return;
+    const available: { type: 'h' | 'v'; row: number; col: number }[] = [];
 
-    const randomLine = allAvailable[Math.floor(Math.random() * allAvailable.length)];
-    setTimeout(() => {
-      playSound('click');
-      makeMove(randomLine, 'ai');
-    }, 500);
-  }, [horizontalLines, verticalLines, makeMove]);
+    // Find available horizontal lines
+    for (let r = 0; r < GRID_SIZE; r++) {
+      for (let c = 0; c < GRID_SIZE - 1; c++) {
+        if (!hLines[r]?.[c]) {
+          available.push({ type: 'h', row: r, col: c });
+        }
+      }
+    }
+
+    // Find available vertical lines
+    for (let r = 0; r < GRID_SIZE - 1; r++) {
+      for (let c = 0; c < GRID_SIZE; c++) {
+        if (!vLines[r]?.[c]) {
+          available.push({ type: 'v', row: r, col: c });
+        }
+      }
+    }
+
+    if (available.length === 0) return;
+
+    // AI tries to complete a box first
+    let chosen = available[Math.floor(Math.random() * available.length)];
+
+    for (const move of available) {
+      const testH = hLines.map(r => [...r]);
+      const testV = vLines.map(r => [...r]);
+
+      if (move.type === 'h') {
+        testH[move.row][move.col] = true;
+      } else {
+        testV[move.row][move.col] = true;
+      }
+
+      const { completed } = checkBoxes(testH, testV, boxes, 'ai');
+      if (completed > 0) {
+        chosen = move;
+        break;
+      }
+    }
+
+    setTimeout(() => makeMove(chosen.type, chosen.row, chosen.col, 'ai'), 500);
+  }, [isPlayerTurn, isPlaying, gameOver, hLines, vLines, boxes, checkBoxes, makeMove]);
 
   // Trigger AI move
-  const handlePlayerMove = (line: Line) => {
-    if (!isPlayerTurn || line.owner) return;
-    playSound('click');
-    const moved = makeMove(line, 'player');
-    if (moved && !isPlayerTurn) {
-      // AI's turn
-    }
-  };
-
-  // Check if AI should move
-  const canAIMove = !isPlayerTurn && isPlaying && !gameOver;
   useEffect(() => {
-    if (canAIMove) {
+    if (!isPlayerTurn && isPlaying && !gameOver) {
       makeAIMove();
     }
-  }, [canAIMove, makeAIMove]);
+  }, [isPlayerTurn, isPlaying, gameOver, makeAIMove]);
+
+  const handleLineClick = (type: 'h' | 'v', row: number, col: number) => {
+    if (!isPlayerTurn || !isPlaying || gameOver) return;
+    makeMove(type, row, col, 'player');
+  };
 
   return (
     <GameLayout title="Dot Connector" emoji="🔵" score={scores.player} showScore={false}>
@@ -196,22 +219,22 @@ export default function DotConnector() {
         </div>
 
         {/* Game Board */}
-        <div className="relative" style={{ width: GRID_SIZE * BOX_SIZE, height: GRID_SIZE * BOX_SIZE }}>
+        <div className="relative bg-purple-100 rounded-xl p-4" style={{ width: GRID_SIZE * BOX_SIZE + 20, height: GRID_SIZE * BOX_SIZE + 20 }}>
           {/* Boxes */}
           {boxes.map((row, r) =>
             row.map((box, c) => (
               <div
-                key={`${r}-${c}`}
-                className={`absolute rounded-lg ${
-                  box.owner === 'player' ? 'bg-blue-300' :
-                  box.owner === 'ai' ? 'bg-red-300' :
+                key={`box-${r}-${c}`}
+                className={`absolute rounded-lg transition-colors ${
+                  box.owner === 'player' ? 'bg-blue-400' :
+                  box.owner === 'ai' ? 'bg-red-400' :
                   'bg-transparent'
                 }`}
                 style={{
-                  left: c * BOX_SIZE + 10,
-                  top: r * BOX_SIZE + 10,
-                  width: BOX_SIZE - 20,
-                  height: BOX_SIZE - 20,
+                  left: c * BOX_SIZE + 15,
+                  top: r * BOX_SIZE + 15,
+                  width: BOX_SIZE - 10,
+                  height: BOX_SIZE - 10,
                 }}
               />
             ))
@@ -222,57 +245,61 @@ export default function DotConnector() {
             [...Array(GRID_SIZE)].map((_, c) => (
               <div
                 key={`dot-${r}-${c}`}
-                className="absolute w-4 h-4 bg-purple-600 rounded-full"
+                className="absolute w-4 h-4 bg-purple-600 rounded-full shadow-md"
                 style={{
-                  left: r * BOX_SIZE - 8,
-                  top: c * BOX_SIZE - 8,
+                  left: r * BOX_SIZE + 8,
+                  top: c * BOX_SIZE + 8,
                 }}
               />
             ))
           )}
 
           {/* Horizontal Lines */}
-          {horizontalLines.map((line, idx) => (
-            <motion.button
-              key={`h-${idx}`}
-              onClick={() => handlePlayerMove(line)}
-              whileHover={{ scale: 1.1 }}
-              className={`absolute h-2 rounded-full cursor-pointer ${
-                line.owner === 'player' ? 'bg-blue-500' :
-                line.owner === 'ai' ? 'bg-red-500' :
-                'bg-gray-300 hover:bg-purple-400'
-              }`}
-              style={{
-                left: line.col * BOX_SIZE + 8,
-                top: line.row * BOX_SIZE - 4,
-                width: BOX_SIZE - 16,
-              }}
-              disabled={!isPlaying || !isPlayerTurn || !!line.owner}
-            />
-          ))}
+          {hLines.map((row, r) =>
+            row.map((taken, c) => (
+              <motion.button
+                key={`h-${r}-${c}`}
+                onClick={() => handleLineClick('h', r, c)}
+                whileHover={{ scale: 1.05 }}
+                className={`absolute h-3 rounded-full cursor-pointer transition-colors ${
+                  hOwners[r]?.[c] === 'player' ? 'bg-blue-500' :
+                  hOwners[r]?.[c] === 'ai' ? 'bg-red-500' :
+                  'bg-gray-300 hover:bg-purple-400'
+                }`}
+                style={{
+                  left: c * BOX_SIZE + 22,
+                  top: r * BOX_SIZE + 5,
+                  width: BOX_SIZE - 14,
+                }}
+                disabled={!isPlaying || !isPlayerTurn || !!taken || gameOver}
+              />
+            ))
+          )}
 
           {/* Vertical Lines */}
-          {verticalLines.map((line, idx) => (
-            <motion.button
-              key={`v-${idx}`}
-              onClick={() => handlePlayerMove(line)}
-              whileHover={{ scale: 1.1 }}
-              className={`absolute w-2 rounded-full cursor-pointer ${
-                line.owner === 'player' ? 'bg-blue-500' :
-                line.owner === 'ai' ? 'bg-red-500' :
-                'bg-gray-300 hover:bg-purple-400'
-              }`}
-              style={{
-                left: line.col * BOX_SIZE - 4,
-                top: line.row * BOX_SIZE + 8,
-                height: BOX_SIZE - 16,
-              }}
-              disabled={!isPlaying || !isPlayerTurn || !!line.owner}
-            />
-          ))}
+          {vLines.map((row, r) =>
+            row.map((taken, c) => (
+              <motion.button
+                key={`v-${r}-${c}`}
+                onClick={() => handleLineClick('v', r, c)}
+                whileHover={{ scale: 1.05 }}
+                className={`absolute w-3 rounded-full cursor-pointer transition-colors ${
+                  vOwners[r]?.[c] === 'player' ? 'bg-blue-500' :
+                  vOwners[r]?.[c] === 'ai' ? 'bg-red-500' :
+                  'bg-gray-300 hover:bg-purple-400'
+                }`}
+                style={{
+                  left: c * BOX_SIZE + 5,
+                  top: r * BOX_SIZE + 22,
+                  height: BOX_SIZE - 14,
+                }}
+                disabled={!isPlaying || !isPlayerTurn || !!taken || gameOver}
+              />
+            ))
+          )}
         </div>
 
-        {/* Start Button */}
+        {/* Start/Restart Button */}
         {!isPlaying && !gameOver && (
           <motion.button
             initial={{ scale: 0 }}
@@ -283,6 +310,19 @@ export default function DotConnector() {
             className="mt-6 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-full text-xl shadow-lg"
           >
             🎮 Start Game
+          </motion.button>
+        )}
+
+        {gameOver && (
+          <motion.button
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={initGame}
+            className="mt-6 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-full text-xl shadow-lg"
+          >
+            🔄 Play Again
           </motion.button>
         )}
 
