@@ -7,7 +7,24 @@ import WinScreen from '@/components/WinScreen';
 import { playSound, playWinFanfare } from '@/lib/sounds';
 import { getHighScore, setHighScore } from '@/lib/highscore';
 
-const EMOJIS = ['🎈', '🌟', '🌈', '🦋', '🌸', '🍎', '🎸', '🚀', '🎨', '🦁', '🐸', '🐨', '🦄', '🌙', '❤️', '🔥'];
+const THEMES = [
+  {
+    name: 'Animals',
+    emojis: ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '🐔'],
+  },
+  {
+    name: 'Nature',
+    emojis: ['🎈', '🌟', '🌈', '🦋', '🌸', '🍎', '🌺', '🌻', '🌹', '🌷', '🍀', '🍁', '🍂', '🌾', '🌵', '🌴'],
+  },
+  {
+    name: 'Space',
+    emojis: ['🚀', '🛸', '🌍', '🌙', '⭐', '☄️', '🪐', '👽', '🛰️', '🌌', '🔭', '🌠', '🌑', '🌕', '🌗', '🌖'],
+  },
+  {
+    name: 'Food',
+    emojis: ['🍕', '🍔', '🍟', '🌭', '🍿', '🧁', '🍩', '🍪', '🎂', '🍰', '🍫', '🍬', '🍭', '🍮', '🍯', '🍓'],
+  },
+];
 
 type Card = {
   id: number;
@@ -24,6 +41,7 @@ const DIFFICULTIES = [
 
 export default function MemoryMatch() {
   const [difficulty, setDifficulty] = useState(0);
+  const [themeIndex, setThemeIndex] = useState(0);
   const [cards, setCards] = useState<Card[]>([]);
   const [flippedCards, setFlippedCards] = useState<number[]>([]);
   const [moves, setMoves] = useState(0);
@@ -31,6 +49,8 @@ export default function MemoryMatch() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [gameWon, setGameWon] = useState(false);
   const [bestMoves, setBestMoves] = useState<{ [key: number]: number }>({});
+  const [hintsLeft, setHintsLeft] = useState(3);
+  const [hintedCards, setHintedCards] = useState<number[]>([]);
 
   useEffect(() => {
     const saved = localStorage.getItem('memory-match-best');
@@ -39,7 +59,8 @@ export default function MemoryMatch() {
 
   const initGame = (diffIndex: number) => {
     const diff = DIFFICULTIES[diffIndex];
-    const selectedEmojis = EMOJIS.slice(0, diff.pairs);
+    const theme = THEMES[themeIndex];
+    const selectedEmojis = theme.emojis.slice(0, diff.pairs);
     const cardEmojis = [...selectedEmojis, ...selectedEmojis];
 
     // Shuffle
@@ -62,6 +83,8 @@ export default function MemoryMatch() {
     setDifficulty(diffIndex);
     setIsPlaying(true);
     setGameWon(false);
+    setHintsLeft(3);
+    setHintedCards([]);
   };
 
   // Timer
@@ -132,6 +155,27 @@ export default function MemoryMatch() {
     }
   }, [cards, isPlaying, moves, difficulty, bestMoves]);
 
+  const useHint = () => {
+    if (hintsLeft <= 0 || isPlaying === false) return;
+    
+    // Find two unmatched cards
+    const unmatched = cards.filter(c => !c.isMatched && !c.isFlipped);
+    if (unmatched.length < 2) return;
+    
+    // Find a matching pair
+    const firstCard = unmatched[0];
+    const matchingCard = unmatched.find(c => c.emoji === firstCard.emoji && c.id !== firstCard.id);
+    
+    if (matchingCard) {
+      setHintedCards([firstCard.id, matchingCard.id]);
+      setHintsLeft(prev => prev - 1);
+      
+      setTimeout(() => {
+        setHintedCards([]);
+      }, 2000);
+    }
+  };
+
   const formatTime = (s: number) => {
     const mins = Math.floor(s / 60);
     const secs = s % 60;
@@ -139,10 +183,35 @@ export default function MemoryMatch() {
   };
 
   const diff = DIFFICULTIES[difficulty];
+  const theme = THEMES[themeIndex];
 
   return (
     <GameLayout title="Memory Match" emoji="🃏" score={moves} showScore={true}>
       <div className="flex flex-col items-center">
+        {/* Theme Selection */}
+        {!isPlaying && !gameWon && (
+          <div className="text-center mb-4">
+            <h2 className="text-xl font-bold text-white mb-2">Choose Theme</h2>
+            <div className="flex flex-wrap justify-center gap-2">
+              {THEMES.map((t, i) => (
+                <motion.button
+                  key={t.name}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setThemeIndex(i)}
+                  className={`px-4 py-2 rounded-full text-sm font-bold ${
+                    i === themeIndex
+                      ? 'bg-purple-500 text-white'
+                      : 'bg-white/20 text-white hover:bg-white/30'
+                  }`}
+                >
+                  {t.emojis[0]} {t.name}
+                </motion.button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Difficulty Selection */}
         {!isPlaying && !gameWon && (
           <div className="text-center mb-6">
@@ -170,13 +239,26 @@ export default function MemoryMatch() {
 
         {/* Game Stats */}
         {isPlaying && (
-          <div className="flex gap-4 mb-4 text-white">
+          <div className="flex flex-wrap gap-3 mb-4 text-white justify-center">
             <div className="bg-white/20 px-4 py-2 rounded-full">
               Moves: {moves}
             </div>
             <div className="bg-white/20 px-4 py-2 rounded-full">
               ⏱️ {formatTime(timer)}
             </div>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={useHint}
+              disabled={hintsLeft <= 0}
+              className={`px-4 py-2 rounded-full font-bold ${
+                hintsLeft > 0
+                  ? 'bg-yellow-400 text-purple-900 hover:bg-yellow-300'
+                  : 'bg-gray-500 text-gray-300 cursor-not-allowed'
+              }`}
+            >
+              💡 Hint ({hintsLeft})
+            </motion.button>
           </div>
         )}
 
@@ -203,6 +285,8 @@ export default function MemoryMatch() {
                       ? 'bg-green-400 border-2 border-green-300'
                       : card.isFlipped
                       ? 'bg-white'
+                      : hintedCards.includes(card.id)
+                      ? 'bg-yellow-300 border-4 border-yellow-500 animate-pulse'
                       : 'bg-gradient-to-br from-purple-500 to-pink-500'
                   }`}
                 >

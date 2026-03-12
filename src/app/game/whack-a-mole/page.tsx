@@ -9,13 +9,32 @@ import { getHighScore, setHighScore } from '@/lib/highscore';
 
 const GAME_DURATION = 30;
 
+type MoleType = 'normal' | 'golden' | 'bomb' | 'fast' | 'frozen';
+
+interface Mole {
+  index: number;
+  type: MoleType;
+  points: number;
+  emoji: string;
+}
+
+const MOLE_TYPES: Record<MoleType, { points: number; emoji: string; chance: number }> = {
+  normal: { points: 1, emoji: '🐭', chance: 0.6 },
+  golden: { points: 5, emoji: '👑', chance: 0.15 },
+  bomb: { points: -3, emoji: '💣', chance: 0.1 },
+  fast: { points: 2, emoji: '💨', chance: 0.1 },
+  frozen: { points: 3, emoji: '❄️', chance: 0.05 },
+};
+
 export default function WhackAMole() {
-  const [activeMole, setActiveMole] = useState<number | null>(null);
+  const [activeMole, setActiveMole] = useState<Mole | null>(null);
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
   const [isPlaying, setIsPlaying] = useState(false);
   const [gameOver, setGameOver] = useState(false);
   const [hitMole, setHitMole] = useState<number | null>(null);
+  const [combo, setCombo] = useState(0);
+  const [frozen, setFrozen] = useState(false);
 
   const highScore = getHighScore('whack-a-mole');
 
@@ -25,6 +44,8 @@ export default function WhackAMole() {
     setIsPlaying(true);
     setGameOver(false);
     setActiveMole(null);
+    setCombo(0);
+    setFrozen(false);
   }, []);
 
   // Mole popping logic
@@ -32,12 +53,29 @@ export default function WhackAMole() {
     if (!isPlaying) return;
 
     const showMole = () => {
-      const newMole = Math.floor(Math.random() * 9);
-      setActiveMole(newMole);
+      if (frozen) return; // Don't spawn new moles when frozen
+
+      const index = Math.floor(Math.random() * 9);
+      
+      // Determine mole type based on chances
+      const rand = Math.random();
+      let cumulative = 0;
+      let moleType: MoleType = 'normal';
+      
+      for (const [type, config] of Object.entries(MOLE_TYPES)) {
+        cumulative += config.chance;
+        if (rand <= cumulative) {
+          moleType = type as MoleType;
+          break;
+        }
+      }
+
+      const moleConfig = MOLE_TYPES[moleType];
+      setActiveMole({ index, type: moleType, points: moleConfig.points, emoji: moleConfig.emoji });
 
       // Speed increases based on score
-      const speed = Math.max(400, 1000 - score * 30);
-      const hideDelay = Math.max(300, 800 - score * 20);
+      const baseSpeed = Math.max(400, 1000 - score * 30);
+      const hideDelay = moleType === 'fast' ? 300 : Math.max(300, 800 - score * 20);
 
       setTimeout(() => {
         setActiveMole(null);
@@ -46,7 +84,7 @@ export default function WhackAMole() {
 
     const interval = setInterval(showMole, Math.max(500, 1200 - score * 30));
     return () => clearInterval(interval);
-  }, [isPlaying, score]);
+  }, [isPlaying, score, frozen]);
 
   // Timer
   useEffect(() => {
@@ -68,9 +106,26 @@ export default function WhackAMole() {
   }, [isPlaying, score]);
 
   const whackMole = (index: number) => {
-    if (index === activeMole && activeMole !== null) {
-      playSound('pop');
-      setScore(prev => prev + 1);
+    if (activeMole && index === activeMole.index) {
+      const mole = activeMole;
+      
+      if (mole.type === 'bomb') {
+        playSound('lose');
+        setScore(prev => Math.max(0, prev + mole.points));
+        setCombo(0);
+      } else if (mole.type === 'frozen') {
+        playSound('score');
+        setFrozen(true);
+        setTimeout(() => setFrozen(false), 3000);
+        setScore(prev => prev + mole.points);
+        setCombo(prev => prev + 1);
+      } else {
+        playSound('pop');
+        const comboBonus = Math.min(combo, 5) * 0.5;
+        setScore(prev => prev + mole.points + comboBonus);
+        setCombo(prev => prev + 1);
+      }
+      
       setHitMole(index);
       setActiveMole(null);
       setTimeout(() => setHitMole(null), 200);
@@ -80,8 +135,8 @@ export default function WhackAMole() {
   return (
     <GameLayout title="Whack-a-Mole" emoji="🐭" score={score} highScore={highScore}>
       <div className="flex flex-col items-center">
-        {/* Timer */}
-        <div className="mb-4">
+        {/* Timer and Combo */}
+        <div className="mb-4 flex items-center gap-4">
           <motion.div
             key={timeLeft}
             initial={{ scale: 1.2 }}
@@ -92,6 +147,24 @@ export default function WhackAMole() {
           >
             ⏱️ {timeLeft}s
           </motion.div>
+          {combo > 1 && (
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="bg-orange-500 text-white px-4 py-2 rounded-full font-bold"
+            >
+              🔥 {combo}x Combo!
+            </motion.div>
+          )}
+          {frozen && (
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="bg-blue-400 text-white px-4 py-2 rounded-full font-bold"
+            >
+              ❄️ Frozen!
+            </motion.div>
+          )}
         </div>
 
         {/* Game Grid */}
@@ -108,15 +181,17 @@ export default function WhackAMole() {
 
               {/* Mole */}
               <AnimatePresence>
-                {activeMole === index && (
+                {activeMole?.index === index && (
                   <motion.div
                     initial={{ y: 60 }}
                     animate={{ y: 0 }}
                     exit={{ y: 60 }}
                     transition={{ type: 'spring', stiffness: 300 }}
-                    className="absolute inset-0 flex items-center justify-center text-4xl sm:text-5xl"
+                    className={`absolute inset-0 flex items-center justify-center text-4xl sm:text-5xl ${
+                      activeMole.type === 'golden' ? 'animate-pulse' : ''
+                    } ${activeMole.type === 'bomb' ? 'animate-bounce' : ''}`}
                   >
-                    🐭
+                    {activeMole.emoji}
                   </motion.div>
                 )}
                 {hitMole === index && (
@@ -125,7 +200,7 @@ export default function WhackAMole() {
                     animate={{ scale: 2, opacity: 0 }}
                     className="absolute inset-0 flex items-center justify-center text-3xl"
                   >
-                    ⭐+1
+                    {activeMole?.type === 'bomb' ? '💥' : `⭐+${activeMole?.points || 1}`}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -148,7 +223,7 @@ export default function WhackAMole() {
         {/* Instructions */}
         <div className="mt-6 text-white/80 text-center text-sm">
           <p>Tap the moles as fast as you can!</p>
-          <p>Speed increases as you score more points!</p>
+          <p>👑 Golden = 5pts | 💣 Bomb = -3pts | ❄️ Frozen = Slow mo!</p>
         </div>
       </div>
 
