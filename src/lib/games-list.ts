@@ -27,6 +27,9 @@ export const games: Game[] = [
   { id: 'maze-runner', name: 'Maze Runner', emoji: '🌀', color: 'bg-fuchsia-400', difficulty: 2 },
   { id: 'spin-wheel', name: 'Spin the Wheel', emoji: '🎡', color: 'bg-green-500', difficulty: 1 },
   { id: 'drawing', name: 'Drawing Canvas', emoji: '🎨', color: 'bg-pink-500', difficulty: 1 },
+  { id: 'space-shooter', name: 'Space Shooter', emoji: '🚀', color: 'bg-purple-600', difficulty: 3 },
+  { id: 'galaxy-maze', name: 'Galaxy Maze', emoji: '🌀', color: 'bg-indigo-600', difficulty: 2 },
+  { id: 'block-puzzle', name: 'Block Puzzle', emoji: '🧱', color: 'bg-orange-500', difficulty: 3 },
 ];
 
 export function getGameById(id: string): Game | undefined {
