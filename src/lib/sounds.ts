@@ -1,6 +1,6 @@
 // Web Audio API sound effects - no audio files needed!
 
-type SoundType = 'pop' | 'win' | 'lose' | 'click' | 'score' | 'jump' | 'correct' | 'wrong' | 'bonus';
+type SoundType = 'pop' | 'win' | 'lose' | 'click' | 'score' | 'jump' | 'correct' | 'wrong' | 'bonus' | 'shoot' | 'explosion' | 'powerup' | 'hit';
 
 interface SoundConfig {
   freq: number;
@@ -19,6 +19,10 @@ const soundConfigs: Record<SoundType, SoundConfig> = {
   correct: { freq: 880, duration: 0.2, type: 'sine' },
   wrong: { freq: 220, duration: 0.3, type: 'square' },
   bonus: { freq: 1500, duration: 0.3, type: 'sine', freqEnd: 2000 },
+  shoot: { freq: 2000, duration: 0.08, type: 'square', freqEnd: 500 },
+  explosion: { freq: 100, duration: 0.3, type: 'sawtooth', freqEnd: 50 },
+  powerup: { freq: 800, duration: 0.2, type: 'sine', freqEnd: 1600 },
+  hit: { freq: 400, duration: 0.1, type: 'square', freqEnd: 200 },
 };
 
 let audioContext: AudioContext | null = null;

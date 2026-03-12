@@ -11,18 +11,38 @@ const THEMES = [
   {
     name: 'Animals',
     emojis: ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '🐔'],
+    bgGradient: 'from-green-400 to-emerald-600',
+    cardBg: 'from-green-500 to-teal-600',
   },
   {
     name: 'Nature',
-    emojis: ['🎈', '🌟', '🌈', '🦋', '🌸', '🍎', '🌺', '🌻', '🌹', '🌷', '🍀', '🍁', '🍂', '🌾', '🌵', '🌴'],
+    emojis: ['🎋', '🌸', '🌺', '🌻', '🌹', '🌷', '🍀', '🍁', '🍂', '🌾', '🌵', '🌴', '🎄', '🌲', '🍃', '🪴'],
+    bgGradient: 'from-teal-400 to-cyan-600',
+    cardBg: 'from-teal-500 to-cyan-600',
   },
   {
     name: 'Space',
     emojis: ['🚀', '🛸', '🌍', '🌙', '⭐', '☄️', '🪐', '👽', '🛰️', '🌌', '🔭', '🌠', '🌑', '🌕', '🌗', '🌖'],
+    bgGradient: 'from-indigo-400 to-purple-600',
+    cardBg: 'from-indigo-500 to-purple-600',
   },
   {
     name: 'Food',
     emojis: ['🍕', '🍔', '🍟', '🌭', '🍿', '🧁', '🍩', '🍪', '🎂', '🍰', '🍫', '🍬', '🍭', '🍮', '🍯', '🍓'],
+    bgGradient: 'from-orange-400 to-red-500',
+    cardBg: 'from-orange-500 to-red-600',
+  },
+  {
+    name: 'Ocean',
+    emojis: ['🐙', '🐬', '🐳', '🦈', '🦀', '🦞', '🦐', '🐠', '🐟', '🐡', '🦑', '🐚', '🌊', '🐢', '🐊', '🐅'],
+    bgGradient: 'from-blue-400 to-indigo-600',
+    cardBg: 'from-blue-500 to-indigo-600',
+  },
+  {
+    name: 'Dinosaurs',
+    emojis: ['🦖', '🦕', '🦎', '🐉', '🦕', '🦖', '🦎', '🐉', '🦕', '🦖', '🦎', '🐉', '🦕', '🦖', '🦎', '🐉'],
+    bgGradient: 'from-amber-400 to-orange-600',
+    cardBg: 'from-amber-500 to-orange-600',
   },
 ];
 
@@ -51,6 +71,10 @@ export default function MemoryMatch() {
   const [bestMoves, setBestMoves] = useState<{ [key: number]: number }>({});
   const [hintsLeft, setHintsLeft] = useState(3);
   const [hintedCards, setHintedCards] = useState<number[]>([]);
+  const [matchAnimation, setMatchAnimation] = useState<number[]>([]);
+
+  const theme = THEMES[themeIndex];
+  const diff = DIFFICULTIES[difficulty];
 
   useEffect(() => {
     const saved = localStorage.getItem('memory-match-best');
@@ -59,11 +83,10 @@ export default function MemoryMatch() {
 
   const initGame = (diffIndex: number) => {
     const diff = DIFFICULTIES[diffIndex];
-    const theme = THEMES[themeIndex];
     const selectedEmojis = theme.emojis.slice(0, diff.pairs);
     const cardEmojis = [...selectedEmojis, ...selectedEmojis];
 
-    // Shuffle
+    // Shuffle with Fisher-Yates
     for (let i = cardEmojis.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [cardEmojis[i], cardEmojis[j]] = [cardEmojis[j], cardEmojis[i]];
@@ -85,6 +108,7 @@ export default function MemoryMatch() {
     setGameWon(false);
     setHintsLeft(3);
     setHintedCards([]);
+    setMatchAnimation([]);
   };
 
   // Timer
@@ -117,7 +141,8 @@ export default function MemoryMatch() {
       const secondCard = newCards.find(c => c.id === second)!;
 
       if (firstCard.emoji === secondCard.emoji) {
-        playSound('score');
+        playSound('win');
+        setMatchAnimation([first, second]);
         setTimeout(() => {
           setCards(prev =>
             prev.map(c =>
@@ -125,8 +150,10 @@ export default function MemoryMatch() {
             )
           );
           setFlippedCards([]);
-        }, 300);
+          setMatchAnimation([]);
+        }, 500);
       } else {
+        playSound('wrong');
         setTimeout(() => {
           setCards(prev =>
             prev.map(c =>
@@ -156,17 +183,16 @@ export default function MemoryMatch() {
   }, [cards, isPlaying, moves, difficulty, bestMoves]);
 
   const useHint = () => {
-    if (hintsLeft <= 0 || isPlaying === false) return;
+    if (hintsLeft <= 0 || !isPlaying) return;
     
-    // Find two unmatched cards
     const unmatched = cards.filter(c => !c.isMatched && !c.isFlipped);
     if (unmatched.length < 2) return;
     
-    // Find a matching pair
     const firstCard = unmatched[0];
     const matchingCard = unmatched.find(c => c.emoji === firstCard.emoji && c.id !== firstCard.id);
     
     if (matchingCard) {
+      playSound('bonus');
       setHintedCards([firstCard.id, matchingCard.id]);
       setHintsLeft(prev => prev - 1);
       
@@ -182,16 +208,17 @@ export default function MemoryMatch() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const diff = DIFFICULTIES[difficulty];
-  const theme = THEMES[themeIndex];
-
   return (
     <GameLayout title="Memory Match" emoji="🃏" score={moves} showScore={true}>
       <div className="flex flex-col items-center">
         {/* Theme Selection */}
         {!isPlaying && !gameWon && (
-          <div className="text-center mb-4">
-            <h2 className="text-xl font-bold text-white mb-2">Choose Theme</h2>
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center mb-4"
+          >
+            <h2 className="text-xl font-bold text-white mb-3">Choose Theme</h2>
             <div className="flex flex-wrap justify-center gap-2">
               {THEMES.map((t, i) => (
                 <motion.button
@@ -199,9 +226,9 @@ export default function MemoryMatch() {
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => setThemeIndex(i)}
-                  className={`px-4 py-2 rounded-full text-sm font-bold ${
+                  className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${
                     i === themeIndex
-                      ? 'bg-purple-500 text-white'
+                      ? `bg-gradient-to-r ${t.bgGradient} text-white shadow-lg`
                       : 'bg-white/20 text-white hover:bg-white/30'
                   }`}
                 >
@@ -209,24 +236,29 @@ export default function MemoryMatch() {
                 </motion.button>
               ))}
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* Difficulty Selection */}
         {!isPlaying && !gameWon && (
-          <div className="text-center mb-6">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="text-center mb-6"
+          >
             <h2 className="text-2xl font-bold text-white mb-4">Choose Difficulty</h2>
             <div className="flex flex-wrap justify-center gap-3">
               {DIFFICULTIES.map((d, i) => (
                 <motion.button
                   key={d.name}
-                  whileHover={{ scale: 1.05 }}
+                  whileHover={{ scale: 1.05, y: -2 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => initGame(i)}
                   className={`px-6 py-3 rounded-xl font-bold text-white shadow-lg ${
-                    i === 0 ? 'bg-green-500 hover:bg-green-600' :
-                    i === 1 ? 'bg-yellow-500 hover:bg-yellow-600 text-purple-900' :
-                    'bg-red-500 hover:bg-red-600'
+                    i === 0 ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700' :
+                    i === 1 ? 'bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-600 hover:to-orange-700' :
+                    'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700'
                   }`}
                 >
                   {d.name}
@@ -234,67 +266,106 @@ export default function MemoryMatch() {
                 </motion.button>
               ))}
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* Game Stats */}
         {isPlaying && (
-          <div className="flex flex-wrap gap-3 mb-4 text-white justify-center">
-            <div className="bg-white/20 px-4 py-2 rounded-full">
-              Moves: {moves}
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-wrap gap-3 mb-4 text-white justify-center"
+          >
+            <div className="bg-white/20 backdrop-blur px-4 py-2 rounded-full flex items-center gap-2">
+              <span>🔄</span>
+              <span className="font-bold">{moves}</span>
             </div>
-            <div className="bg-white/20 px-4 py-2 rounded-full">
-              ⏱️ {formatTime(timer)}
+            <div className="bg-white/20 backdrop-blur px-4 py-2 rounded-full flex items-center gap-2">
+              <span>⏱️</span>
+              <span className="font-bold">{formatTime(timer)}</span>
             </div>
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={useHint}
               disabled={hintsLeft <= 0}
-              className={`px-4 py-2 rounded-full font-bold ${
+              className={`px-4 py-2 rounded-full font-bold flex items-center gap-2 ${
                 hintsLeft > 0
-                  ? 'bg-yellow-400 text-purple-900 hover:bg-yellow-300'
+                  ? 'bg-gradient-to-r from-yellow-400 to-orange-500 text-purple-900 hover:from-yellow-500 hover:to-orange-600'
                   : 'bg-gray-500 text-gray-300 cursor-not-allowed'
               }`}
             >
-              💡 Hint ({hintsLeft})
+              💡 {hintsLeft}
             </motion.button>
-          </div>
+          </motion.div>
         )}
 
         {/* Card Grid */}
         {isPlaying && (
-          <div
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
             className="grid gap-2 sm:gap-3"
             style={{
               gridTemplateColumns: `repeat(${diff.cols}, minmax(0, 1fr))`,
               maxWidth: `${diff.cols * 70}px`,
             }}
           >
-            <AnimatePresence>
+            <AnimatePresence mode='popLayout'>
               {cards.map(card => (
                 <motion.button
                   key={card.id}
+                  layout
                   initial={{ scale: 0, rotateY: 180 }}
-                  animate={{ scale: 1, rotateY: card.isFlipped || card.isMatched ? 0 : 180 }}
+                  animate={{ 
+                    scale: 1, 
+                    rotateY: card.isFlipped || card.isMatched ? 0 : 180,
+                    backgroundColor: matchAnimation.includes(card.id) 
+                      ? ['#22c55e', '#4ade80', '#22c55e'] 
+                      : undefined,
+                  }}
                   whileHover={{ scale: card.isMatched ? 1 : 1.05 }}
                   whileTap={{ scale: 0.95 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                   onClick={() => handleCardClick(card.id)}
                   className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl text-2xl sm:text-3xl flex items-center justify-center shadow-lg transition-all ${
                     card.isMatched
-                      ? 'bg-green-400 border-2 border-green-300'
+                      ? 'bg-gradient-to-br from-green-400 to-emerald-500 border-4 border-green-300'
                       : card.isFlipped
-                      ? 'bg-white'
+                      ? `bg-gradient-to-br ${theme.cardBg}`
                       : hintedCards.includes(card.id)
-                      ? 'bg-yellow-300 border-4 border-yellow-500 animate-pulse'
-                      : 'bg-gradient-to-br from-purple-500 to-pink-500'
+                      ? 'bg-gradient-to-br from-yellow-400 to-orange-500 border-4 border-yellow-300 animate-pulse'
+                      : `bg-gradient-to-br ${theme.bgGradient}`
                   }`}
+                  style={{
+                    boxShadow: card.isMatched 
+                      ? '0 0 20px rgba(34, 197, 94, 0.5)' 
+                      : hintedCards.includes(card.id)
+                      ? '0 0 20px rgba(234, 179, 8, 0.5)'
+                      : '0 4px 15px rgba(0,0,0,0.2)',
+                  }}
                 >
-                  {(card.isFlipped || card.isMatched) ? card.emoji : '❓'}
+                  {(card.isFlipped || card.isMatched) ? (
+                    <motion.span
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 500 }}
+                    >
+                      {card.emoji}
+                    </motion.span>
+                  ) : (
+                    <motion.span
+                      animate={{ opacity: [0.5, 1, 0.5] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                      className="text-white/50"
+                    >
+                      ❓
+                    </motion.span>
+                  )}
                 </motion.button>
               ))}
             </AnimatePresence>
-          </div>
+          </motion.div>
         )}
 
         {/* Win Screen */}
